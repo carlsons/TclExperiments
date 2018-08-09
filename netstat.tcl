@@ -88,7 +88,9 @@ proc run_netstat {} {
       local                \
       remote               \
       sock_state           \
-      program              \
+      pid_raw              \
+      pid_id               \
+      pid_name             \
       timer_state          \
       counts_raw           \
       counts               \
@@ -134,7 +136,7 @@ proc run_netstat {} {
          set sock_state    [ lindex $data_fields [ incr i ] ]
       }
 
-      set program          [ lindex $data_fields [ incr i ] ]
+      set pid_raw          [ lindex $data_fields [ incr i ] ]
       set timer_state      [ lindex $data_fields [ incr i ] ]
 
       # parse the actual timers
@@ -143,6 +145,16 @@ proc run_netstat {} {
       set timer_val        [ lindex $counts 0 ]
       set rexmits          [ lindex $counts 1 ]
       set keepalives       [ lindex $counts 2 ]
+
+      if { $pid_raw == "-" } {
+         set pid_id        {-}
+         set pid_name      {-}
+      } else {
+         set pid_lst       [ split  $pid_raw {/} ]
+         set pid_id        [ lindex $pid_lst 0 ]
+         set pid_name      [ lindex $pid_lst 1 ]
+      }
+
 
       # TODO: need to generate a formated output, but probably needs to be
       # deferred until the caller can categorize each record and collapse those
