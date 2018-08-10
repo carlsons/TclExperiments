@@ -4,7 +4,11 @@
 
 # global variables
 
-set debug yes
+set debug_run           no
+set debug_results       no
+set debug_pid_names     no
+set debug_categories    yes
+
 
 # this translates all of the known state names to a TLA
 dict set state_names CLOSED            CLD
@@ -84,15 +88,30 @@ proc run_exe { exe args } {
    return $recs
 }
 
+proc print_hdr { hdr } {
+   puts "\n"
+   puts {===============================================================================}
+   puts $hdr
+   puts {===============================================================================}
+}
+
+proc print_subhdr { subhdr } {
+   puts ""
+   puts {-------------------------------------------------------------------------------}
+   puts $subhdr
+}
+
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 # main procedure for gathering netstat data
 
 proc run_netstat {} {
 
+   # step 1 -- define the local variables
+
    global pid_names
    global state_names
-   global debug
+   global debug_run
 
    # this is the list of fields that will be added to the dictionary
    set field_names [ list  \
@@ -124,8 +143,14 @@ proc run_netstat {} {
    set exe                 netstat
    set args                [ list --all --udp --tcp --program --timers ]
 
+
+   # step 2 -- run the command and get the raw output
+
    # run the command and get the data_raw data
    set netstat_raw         [ run_exe $exe $args ]
+
+
+   # step 3 -- process and cook the data
 
    # we want to exclude the header from the actual data
    # set header              [ lindex $netstat_raw 1 ]
@@ -134,16 +159,20 @@ proc run_netstat {} {
    # iterate each line from the data
    foreach data_raw $netstat_data {
 
-      # parse the raw data into a proper list and count the number of fields we find
+      # step 3.1 -- parse the raw data into a proper list and count the number
+      # of fields we find
+
       set data_fields      [ regexp -all -inline {\S+} $data_raw ]
       set fcnt             [ llength $data_raw ]
+
+
+      # step 3.2 -- skip any blank lines (usually the last one)
 
       # skip blank lines (usually the last one)
       if { $fcnt == 0 } continue
 
 
-
-      # now extract the individual fields
+      # step 3.3 -- now extract the individual fields
 
       set i                -1
       set proto            [ lindex $data_fields [ incr i ] ]
@@ -164,16 +193,17 @@ proc run_netstat {} {
       set counts_raw       [ lindex $data_fields [ incr i ] ]
 
 
+      # step 3.4 -- parse and translate various fields
 
-      # parse and translate various fields
-
+      # get the local port nubmer
       set local_port       [ lindex [ split $local ":" ] end ]
 
-      # split out all of the counters
-      set counts           [ regexp -all -inline {[^()/]+} $counts_raw ]
-      set timer_val        [ lindex $counts 0 ]
-      set rexmits          [ lindex $counts 1 ]
-      set keepalives       [ lindex $counts 2 ]
+      # translate the sock_state to a TLA for better display
+      if { [ dict exists $state_names $sock_state ] } {
+         set sock_state_desc  [ dict get $state_names $sock_state ]
+      } else {
+         set sock_state_desc  {---}
+      }
 
       # split the pid/program_name field
       if { $pid_raw == "-" } {
@@ -184,37 +214,45 @@ proc run_netstat {} {
          set pid_id        [ lindex $pid_lst 0 ]
          set pid_name      [ lindex $pid_lst 1 ]
       }
-      set pid_key          [ format "%08d,%s" $pid_id $proto ]
+      set pid_key          [ mk_pid_key $pid_id $proto ]
 
-      # create a dictionary that maps pid_id's to pid_name's
+      # split out all of the counters
+      set counts           [ regexp -all -inline {[^()/]+} $counts_raw ]
+      set timer_val        [ lindex $counts 0 ]
+      set rexmits          [ lindex $counts 1 ]
+      set keepalives       [ lindex $counts 2 ]
+
+
+      # step 3.5 -- update the dictionary that maps pid_id's to pid_name's
+
       if { ! [ dict exists $pid_names $pid_id ] } {
          dict set pid_names $pid_id $pid_name
       }
 
-      # translate the sock_state to a TLA for better display
 
-      if { [ dict exists $state_names $sock_state ] } {
-         set sock_state_desc  [ dict get $state_names $sock_state ]
-      } else {
-         set sock_state_desc  {---}
-      }
+      # step 3.6 -- generate the formatted output
 
-      # TODO: need to generate a formated output, but probably needs to be
+      # TODO: need to generate a formatted output, but probably needs to be
       # deferred until the caller can categorize each record and collapse those
       # we're just counting
+
       set data_formatted   [ format "%d %s" $fcnt $data_fields ]
+
+
+      # step 3.7 -- generate the results
 
       # generate the dictionary for this record
       set d                [ dict create ]
       foreach n $field_names {
          dict append d $n [ get_var $n ]
       }
-
       # append it to the master list (i.e.: the return result)
       lappend netstat_list $d
 
-      # debug spiffle
-      if { $debug } {
+
+      # spiffle
+
+      if { $debug_run } {
          puts {-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-}
          puts $data_formatted
          puts "\nprint fields:"
@@ -226,23 +264,74 @@ proc run_netstat {} {
       }
    }
 
-   # more debug spiffle
-   if { $debug } {
+   # more spiffle
+   if { $debug_run } {
       puts {-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-}
    }
 
    # return he master list, i.e.: a list containing a dictionary for each
    # record in the output
+
    return $netstat_list
 }
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
-# run the main procedure and puke out the data
+# helper procedure to dump a list of dictionaries containing a netstat record
+
+proc dump_list { list_name } {
+
+   print_subhdr "dumping list: $list_name\n"
+
+   upvar $list_name local_list
+   if { [ llength $local_list ] } {
+      foreach d $local_list {
+         puts [ dict get $d data_fields ]
+      }
+   } else {
+      puts "empty"
+   }
+}
+
+proc mk_pid_key { pid_id proto } {
+
+   return [ format "%08d,%s" $pid_id $proto ]
+}
+
+proc get_pid_id { pid_key } {
+
+   set pid_id              [ string trimleft [ lindex [ split $pid_key "," ] 0 ] 0 ]
+   if { ! [ string length $pid_id  ] } {
+      set pid_id           0
+   }
+
+   return $pid_id
+}
+
+
+
+####################################################################################################
+
+  # #      #     #    #    ### #     #
+  # #      ##   ##   # #    #  ##    #
+#######    # # # #  #   #   #  # #   #
+  # #      #  #  # #     #  #  #  #  #
+#######    #     # #######  #  #   # #
+  # #      #     # #     #  #  #    ##
+  # #      #     # #     # ### #     #
+
+####################################################################################################
+
+
+# step 1 -- capture the data
+
+# run netstat and capture the results, returned as a list of dictionaries, each
+# of which contains the parsed data record from the raw output of netstat
 
 set netstat_data [ run_netstat ]
 
-if { $debug } {
+# spiffle
+if { $debug_results } {
    puts "\nprint main results:"
    foreach d $netstat_data {
       puts {-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-}
@@ -252,17 +341,29 @@ if { $debug } {
 }
 
 
+# step 2 -- iterate the netstat data, categorize each record and add it to the
+# appropriate list
 
-# iterate the netstat data and send them to lists based on sock_state
+# this is a list of all the categories, i.e.: the name of the list used to
+# store records for that category
+set categories             [ list netstat_est netstat_syn netstat_wait netstat_closed netstat_listen ]
 
-set netstat_est      [ list ]
-set netstat_syn      [ list ]
-set netstat_wait     [ list ]
-set netstat_closed   [ list ]
-set netstat_listen   [ list ]
-set netstat_undef    [ dict create ]
+# these are the individual lists that will contain their respective categories
+set netstat_est            [ list ]
+set netstat_syn            [ list ]
+set netstat_wait           [ list ]
+set netstat_closed         [ list ]
+set netstat_listen         [ list ]
 
-# organize them by sock_state
+# anything that doesn't fall in one of the above categories is subject to being
+# collapsed into a single output record (with a count); these records are
+# stored in a dictionary of lists, based on the pid_key of the record
+set netstat_undef          [ dict create ]
+
+# basically, records are organize by their respective sock_state value
+
+# all known socket states:
+#
 #    CLOSED
 #    CLOSE_WAIT
 #    ESTABLISHED
@@ -303,60 +404,42 @@ foreach d $netstat_data {
    }
 }
 
+# spiffle
+if { $debug_pid_names } {
+   # dump out the pid to name lookup dictionary
+   puts "\n\n"
+   puts {--------------------------------------------------------------------------------}
+   puts "pid names:"
+   pdict $pid_names
+   puts {--------------------------------------------------------------------------------}
+}
 
+# spiffle
+if { $debug_categories } {
 
-proc print_list { list_name } {
-   puts "\n"
-   puts {-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-}
-   puts "dumping list: $list_name\n"
-   upvar $list_name local_list
-   if { [ llength $local_list ] } {
-      foreach d $local_list {
+   print_hdr "dumping categories"
+
+   # dump each of the categories
+   foreach c $categories {
+      dump_list $c
+   } 
+
+   print_hdr "dumping list: netstat_undef"
+
+   foreach pid_key [ lsort [ dict keys $netstat_undef ] ] {
+
+      set pid_id              [ get_pid_id $pid_key ]
+      set d_list              [ dict get $netstat_undef $pid_key ]
+
+      print_subhdr "dumping: ${pid_id}/[ dict get $pid_names $pid_id ] cnt=[ llength $d_list ] key=$pid_key\n"
+
+      foreach d $d_list {
          puts [ dict get $d data_fields ]
       }
-   } else {
-      puts "empty"
-   }
-}
-
-
-set categories             [ list netstat_est netstat_syn netstat_wait netstat_closed netstat_listen ]
-
-foreach c $categories {
-   print_list $c
-} 
-
-puts "\n\n"
-puts {--------------------------------------------------------------------------------}
-puts "pid names:"
-
-pdict $pid_names
-
-puts "\n\n"
-puts {-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-}
-puts "dumping list: netstat_undef"
-puts {-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-}
-
-set pid_keys [ dict keys $netstat_undef ]
-
-foreach pid_key [ lsort $pid_keys ] {
-
-   set pid_id              [ string trimleft [ lindex [ split $pid_key "," ] 0 ] 0 ]
-   if { ! [ string length $pid_id  ] } {
-      set pid_id           0
-   }
-
-   set d_list              [ dict get $netstat_undef $pid_key ]
-
-   puts ""
-   puts {--------------------------------------------------------------------------------}
-   puts "dumping: ${pid_id}/[ dict get $pid_names $pid_id ] cnt=[ llength $d_list ] key=$pid_key\n"
-
-   foreach d $d_list {
-      puts [ dict get $d data_fields ]
    }
 
 }
+
 
 
 # vim: syntax=tcl
