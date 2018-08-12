@@ -8,7 +8,7 @@ set debug_run           no
 set debug_results       no
 set debug_pid_names     no
 set debug_categories    yes
-
+set debug_perf          yes
 
 # this translates all of the known state names to a TLA
 dict set state_names CLOSED            CLD
@@ -23,6 +23,31 @@ dict set state_names SYN_SEND          SYS
 dict set state_names TIME_WAIT         TMW
 
 set pid_names [ dict create 0 {---} ]
+
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+set trace_exec [ dict create ]
+
+proc add_trace { milestone } {
+   global trace_exec
+   dict set trace_exec $milestone [ clock milliseconds ]
+}
+
+proc dump_trace {} {
+
+   print_hdr "dumping trace:"
+   puts ""
+
+   global trace_exec
+   dict for { milestone epoch_ms } $trace_exec {
+      set epoch      [ expr $epoch_ms / 1000 ]
+      set milli      [ expr $epoch_ms % 1000 ]
+      set timestamp  [ clock format $epoch -format {%H:%M:%S} ]
+      puts [ format "%s.%03d: %s" $timestamp $milli $milestone ]
+   }
+}
+
+add_trace {BEG: script}
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
@@ -106,6 +131,8 @@ proc print_subhdr { subhdr } {
 # main procedure for gathering netstat data
 
 proc run_netstat {} {
+
+   add_trace            {BEG: run_netstat}
 
    # step 1 -- define the local variables
 
@@ -272,6 +299,8 @@ proc run_netstat {} {
    # return he master list, i.e.: a list containing a dictionary for each
    # record in the output
 
+   add_trace            {END: run_netstat}
+
    return $netstat_list
 }
 
@@ -344,11 +373,21 @@ if { $debug_results } {
 # step 2 -- iterate the netstat data, categorize each record and add it to the
 # appropriate list
 
+add_trace {BEG: categorize}
+
 # this is a list of all the categories, i.e.: the name of the list used to
 # store records for that category
-set categories             [ list netstat_est netstat_syn netstat_wait netstat_closed netstat_listen ]
+set categories             [ list   \
+   netstat_alerts \
+   netstat_est    \
+   netstat_syn    \
+   netstat_wait   \
+   netstat_closed \
+   netstat_listen \
+]
 
 # these are the individual lists that will contain their respective categories
+set netstat_alerts         [ list ]
 set netstat_est            [ list ]
 set netstat_syn            [ list ]
 set netstat_wait           [ list ]
@@ -380,6 +419,7 @@ foreach d $netstat_data {
    set sock_state          [ dict get $d sock_state ]
    set pid_id              [ dict get $d pid_id ]
    set pid_key             [ dict get $d pid_key ]
+   set timer_val           [ dict get $d timer_val ]
 
    switch -glob $sock_state {
 
@@ -392,7 +432,13 @@ foreach d $netstat_data {
       FIN_WAIT_1           -
       FIN_WAIT_2           -
       LAST_ACK             -
-      TIME_WAIT            { lappend netstat_wait     $d }
+      TIME_WAIT            {
+         if { $timer_val != 0 } {
+            lappend netstat_wait    $d
+         } else {
+            lappend netstat_alerts  $d
+         }
+      }
 
       CLOSED               { lappend netstat_closed   $d }
 
@@ -403,6 +449,13 @@ foreach d $netstat_data {
       }
    }
 }
+
+add_trace {END: categorize}
+
+
+# step 3 -- dump out the data; currently formatted for debugging purposes
+
+add_trace {BEG: dump}
 
 # spiffle
 if { $debug_pid_names } {
@@ -440,6 +493,12 @@ if { $debug_categories } {
 
 }
 
+add_trace {END: dump}
+add_trace {END: script}
+
+if { $debug_perf } {
+   dump_trace
+}
 
 
 # vim: syntax=tcl
