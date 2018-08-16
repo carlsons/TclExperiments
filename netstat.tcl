@@ -22,6 +22,11 @@ dict set state_names SYN_RECEIVED      SYR
 dict set state_names SYN_SEND          SYS
 dict set state_names TIME_WAIT         TMW
 
+dict set proto_names udp               u
+dict set proto_names udp6              u6
+dict set proto_names tcp               t
+dict set proto_names tcp6              t6
+
 set pid_names [ dict create 0 {---} ]
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
@@ -138,6 +143,7 @@ proc run_netstat {} {
 
    global pid_names
    global state_names
+   global proto_names
    global debug_run
 
    # this is the list of fields that will be added to the dictionary
@@ -147,6 +153,7 @@ proc run_netstat {} {
       data_formatted       \
       fcnt                 \
       proto                \
+      proto_desc           \
       recvq                \
       sendq                \
       local                \
@@ -221,6 +228,13 @@ proc run_netstat {} {
 
 
       # step 3.4 -- parse and translate various fields
+
+      # translate the proto to a TLA for better display
+      if { [ dict exists $proto_names $proto ] } {
+         set proto_desc    [ dict get $proto_names $proto ]
+      } else {
+         set proto_desc    {--}
+      }
 
       # get the local port nubmer
       set local_port       [ lindex [ split $local ":" ] end ]
