@@ -59,8 +59,10 @@ foreach rec $recs {
    # strip the comment and trailing space from the record
    if { $c > -1 } {
       set str              [ string trimright [ string range $rec 0 [ expr $c - 1] ] ]
+      set comment          [ string range $rec $c end ]
    } else {
       set str              $rec
+      set comment          {}
    }
 
    # and process this record, if there's anything left
@@ -84,10 +86,14 @@ foreach rec $recs {
 
       set d                [ dict create ]
 
-      dict set d           fqdn  $fqdn
-      dict set d           name  $name
+      dict set d           rec      $rec
+      dict set d           str      $str
+      dict set d           comment  $comment
+      dict set d           ip       $ip
+      dict set d           fqdn     $fqdn
+      dict set d           name     $name
 
-      dict set hosts       $ip   $d
+      dict set hosts       $ip      $d
 
    }
 
