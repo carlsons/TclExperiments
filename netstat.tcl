@@ -5,7 +5,7 @@
 # global variables
 
 set debug_run           no
-set debug_results       no
+set debug_results       yes
 set debug_pid_names     no
 set debug_categories    yes
 set debug_perf          yes
@@ -131,6 +131,16 @@ proc print_subhdr { subhdr } {
    puts $subhdr
 }
 
+proc get_addr { addr } {
+
+   set addr_parts       [ split $addr ":" ]
+
+   if { [ llength $addr_parts ] == 2 } {
+      return [ lindex $addr_parts 0 ]
+   }
+   return [ join [ lrange $addr_parts 0 end-1 ] ":" ]
+}
+
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 # main procedure for gathering netstat data
@@ -159,6 +169,8 @@ proc run_netstat {} {
       local                \
       local_port           \
       remote               \
+      remote_addr          \
+      remote_port          \
       sock_state           \
       sock_state_desc      \
       pid_raw              \
@@ -175,7 +187,7 @@ proc run_netstat {} {
 
    # define the command to execute
    set exe                 netstat
-   set args                [ list --all --udp --tcp --program --timers ]
+   set args                [ list --all --udp --tcp --program --timers --numeric-hosts ]
 
 
    # step 2 -- run the command and get the raw output
@@ -237,7 +249,11 @@ proc run_netstat {} {
       }
 
       # get the local port nubmer
-      set local_port       [ lindex [ split $local ":" ] end ]
+      set local_port       [ lindex [ split $local    ":" ] end ]
+
+      # decompose the remote address/port combination
+      set remote_addr      [ get_addr $remote ]
+      set remote_port      [ lindex [ split $remote   ":" ] end ]
 
       # translate the sock_state to a TLA for better display
       if { [ dict exists $state_names $sock_state ] } {
