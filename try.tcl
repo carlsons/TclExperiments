@@ -58,18 +58,18 @@ foreach rec $recs {
    set c                   [ string first {#} $rec ]
    # strip the comment and trailing space from the record
    if { $c > -1 } {
-      set str              [ string trimright [ string range $rec 0 [ expr $c - 1] ] ]
+      set data_str         [ string trimright [ string range $rec 0 [ expr $c - 1] ] ]
       set comment          [ string range $rec $c end ]
    } else {
-      set str              $rec
+      set data_str         $rec
       set comment          {}
    }
 
    # and process this record, if there's anything left
-   if { [ string length $str ] } {
+   if { [ string length $data_str ] } {
 
       # split the fields into a list of 2 or 3 elements: ip, fqdn and name
-      set data_fields      [ regexp -all -inline {\S+} $str ]
+      set data_fields      [ regexp -all -inline {\S+} $data_str ]
 
       # extract the fields from the list
       set i                -1
@@ -81,19 +81,20 @@ foreach rec $recs {
          set name          [ lindex [ split $fqdn {.} ] 0 ]
       }
 
-      # puts "'$str' '$data_fields'"
+      # puts "'$data_str' '$data_fields'"
       # puts "ip=$ip fqdn=$fqdn name=$name"
 
       set d                [ dict create ]
 
-      dict set d           rec      $rec
-      dict set d           str      $str
-      dict set d           comment  $comment
-      dict set d           ip       $ip
-      dict set d           fqdn     $fqdn
-      dict set d           name     $name
+      dict set d           record            $rec
+      dict set d           data_str          $data_str
+      dict set d           data_fields       $data_fields
+      dict set d           comment           $comment
+      dict set d           ip                $ip
+      dict set d           fqdn              $fqdn
+      dict set d           name              $name
 
-      dict set hosts       $ip      $d
+      dict set hosts       $ip               $d
 
    }
 
