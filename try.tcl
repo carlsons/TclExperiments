@@ -1,5 +1,11 @@
 #! /usr/bin/tclsh
 
+
+
+set verbose no
+
+
+
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 # leveraged procedures
@@ -41,14 +47,26 @@ proc pdict { d {i 0} {p "  "} {s " -> "} } {
     return
 }
 
-# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 
-set hosts   [ dict create ]
+      #                           #
+     #  ###### #####  ####       #  #    #  ####   ####  #####  ####
+    #   #        #   #    #     #   #    # #    # #        #   #
+   #    #####    #   #         #    ###### #    #  ####    #    ####
+  #     #        #   #        #     #    # #    #      #   #        #
+ #      #        #   #    #  #      #    # #    # #    #   #   #    #
+#       ######   #    ####  #       #    #  ####   ####    #    ####
 
-set fd      [ open "/etc/hosts" r ]
-set raw     [ read $fd ]
-set recs    [ split $raw "\n" ]
+
+
+puts "\n-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-"
+puts "\n PARSING /etc/hosts\n"
+
+set hosts                  [ dict create ]
+
+set fd                     [ open "/etc/hosts" r ]
+set raw                    [ read $fd ]
+set recs                   [ split $raw "\n" ]
 
 foreach rec $recs {
 
@@ -100,10 +118,160 @@ foreach rec $recs {
 
 }
 
+close $fd
 
 pdict $hosts
-
 puts "\n\nlookup=[ dict get $hosts 127.0.0.1 fqdn ]"
+
+
+
+#       ####### ####### #    # #     # ######
+#       #     # #     # #   #  #     # #     #
+#       #     # #     # #  #   #     # #     #
+#       #     # #     # ###    #     # ######
+#       #     # #     # #  #   #     # #
+#       #     # #     # #   #  #     # #
+####### ####### ####### #    #  #####  #
+
+
+
+puts "\n-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-"
+puts "\nGETTING SAMPLE DATA\n"
+
+
+proc get_addrs {} {
+
+   set fd                  [ open "|netstat --tcp -n --wide" r ]
+   set raw                 [ read $fd ]
+   set recs                [ split $raw "\n" ]
+
+   set rc                  [ list ]
+
+   foreach rec [ lrange $recs 2 end ] {
+
+      if { [ string length $rec ] } {
+
+         set ip_port          [ lindex [ regexp -all -inline {\S+} $rec ] 4   ]
+
+         set sep              [ string last ":" $ip_port                      ]
+         set ip               [ string range    $ip_port 0 [ expr $sep - 1 ]  ]
+
+         puts "----------------------------------------"
+         puts "DEBUG: rec=$rec"
+         puts "DEBUG: ip_port=$ip_port"
+         puts "DEBUG: sep=$sep"
+         puts "DEBUG: ip=$ip"
+
+         lappend rc           $ip
+      }
+   }
+
+   return $rc
+}
+
+set raw                    [ get_addrs ]
+puts "DEBUG: raw=$raw"
+
+set inputs                 [ split $raw ]
+
+puts "----------------------------------------"
+puts "DEBUG: dump inputs"
+
+foreach x $inputs {
+   puts $x
+}
+
+
+
+puts "\n-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-"
+puts "\nDEBUG: DOING LOOKUP"
+
+
+set dns_cache [ dict create ]
+
+proc lookup_dns_name { ip } {
+
+   global dns_cache
+
+   puts "\n----------------------------------------"
+   puts "DEBUG: looking up: $ip\n"
+
+   set fd                  [ open "|host $ip" r ]
+   set raw                 [ read $fd ]
+   set recs                [ split $raw "\n" ]
+   set names               [ list ]
+
+   foreach rec $recs {
+
+      if { [ string length $rec ] > 0 } {
+         if { [ string first "domain name pointer" $rec ] > -1 } {
+
+            set data_fields      [ regexp -all -inline {\S+} $rec ]
+            set name             [ string trimright [ lindex $data_fields end ] "." ]
+
+            puts "DEBUG: rec=$rec"
+            puts "DEBUG: name=$name"
+            puts ""
+
+            lappend names $name
+
+         } else {
+            # puts "DEBUG: not found"
+         }
+      } else {
+         # puts "DEBUG: empty"
+      }
+   }
+
+   if { [ llength $names ] } {
+      puts "DEBUG: names=$names"
+   }
+
+   set err                 [ catch { close $fd } errmsg opts ]
+
+
+   set dns_entry           [ dict create ]
+   dict set dns_entry      ip $ip
+
+   if { $err } {
+
+      if { $::verbose } {
+         puts "DEBUG: err=$err errmsg=$errmsg"
+         pdict $opts
+      } else {
+         puts "DEBUG: lookup failed"
+      }
+
+      dict set dns_entry   name  "---"
+      dict set dns_entry   names [ list "---" ]
+
+   } else {
+
+      dict set dns_entry   name  [ lindex $names 0 ]
+      dict set dns_entry   names $names
+
+   }
+
+   dict set dns_cache      $ip $dns_entry
+
+}
+
+
+lappend inputs 172.217.1.132
+lappend inputs 192.168.1.104
+
+foreach arg $inputs {
+   lookup_dns_name $arg
+}
+
+puts "\n----------------------------------------"
+puts "\nDEBUG: dumping dns_cache"
+
+pdict $dns_cache
+
+puts "\n----------------------------------------"
+
+
 
 
 # vim: syntax=tcl

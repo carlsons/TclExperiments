@@ -187,7 +187,7 @@ proc run_netstat {} {
 
    # define the command to execute
    set exe                 netstat
-   set args                [ list --all --udp --tcp --program --timers --numeric-hosts ]
+   set args                [ list --all --udp --tcp --program --timers --numeric-hosts --wide ]
 
 
    # step 2 -- run the command and get the raw output
