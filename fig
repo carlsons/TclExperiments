@@ -1,0 +1,384 @@
+#! /usr/bin/zsh
+TEMPLATE_VERSION="1.1-2016.05.24-01"
+
+SCRIPT_VERSION="1.1-2018.08.15-01"
+SCRIPT_NAME="fig"
+SCRIPT_DESC="figlet formatter"
+
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+# global functions, needed during initialization
+
+get_real_pwd()
+{
+   realpath $1
+}
+
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+# set the template environment
+
+CURRENT_DIR="$PWD"
+
+SCRIPT="$0"
+SCRIPT_BASENAME="$( basename ${SCRIPT} )"
+SCRIPT_PATHNAME="$( dirname  ${SCRIPT} )"
+SCRIPT_PID=$$
+
+SCRIPT_ARGS=( $@ )
+
+DATE_SPEC='+%Y.%m.%d-%a-%H.%M.%S-%Z'
+RUN_DATE=$( date $DATE_SPEC )
+
+LOCALHOST=$( hostname )
+LOCALHOST_FDQN=$( hostname -f )
+
+VERBOSE='false'
+DEBUG='false'
+
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+# if we're being run from a link, canonicalize the link so we know where we're
+# really running from; otherwise, translate the path to a fully qualified path
+
+REAL_SCRIPT="${SCRIPT}"
+REAL_BASENAME="${SCRIPT_BASENAME}"
+REAL_PATHNAME="${SCRIPT_PATHNAME}"
+
+if [ -L ${SCRIPT} ]; then
+
+   REAL_SCRIPT=$( readlink --canonicalize-existing ${SCRIPT} )
+   REAL_BASENAME="$( basename ${REAL_SCRIPT} )"
+   REAL_PATHNAME="$( dirname  ${REAL_SCRIPT} )"
+
+else
+
+   REAL_PATHNAME=$( get_real_pwd ${REAL_PATHNAME} )
+
+fi
+
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+# script environment
+
+DO_CODE='false'
+DO_SQUASH='false'
+DO_INDENT='false'
+DO_UNDERLINE='false'
+
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+# these are the documentation functions
+
+# standard help message
+usage()
+{
+cat <<- EOF
+	usage: ${REAL_BASENAME} [options [...]] command [args]
+	${SCRIPT_DESC} script, version ${SCRIPT_VERSION}
+
+	   options:
+
+	      -h|--help         : this text
+	      --version         : script version
+
+	      --verbose         : show detail while processing
+	      --debug           : show detail while processing
+
+	   commands:
+
+	      help              : this text
+
+
+EOF
+}
+
+show_version()
+{
+cat <<- EOF
+	${REAL_BASENAME}: ${SCRIPT_DESC} script, version ${SCRIPT_VERSION}
+EOF
+}
+
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+# script functions
+
+HDR_BAR="####################################################################################################"
+SUB_BAR="----------------------------------------------------------------------------------------------------"
+
+show_hdr_beg()
+{
+   printf "%s\n\n" $HDR_BAR
+}
+
+show_hdr_end()
+{
+   printf "%s\n" $HDR_BAR
+}
+
+show_sub_beg()
+{
+   printf "%s\n\n" $SUB_BAR
+}
+
+show_sub_end()
+{
+   printf "%s\n" $SUB_BAR
+}
+
+trim_whitespace()
+{
+   sed 's/ \+$//'
+}
+
+do_squash()
+{
+   if $DO_SQUASH ; then
+      awk '(NF>0) { print }'
+   else
+      cat -
+   fi
+}
+
+do_indent()
+{
+   if $DO_INDENT ; then
+      awk '(NF>0) { printf( "   %s\n", $0 ) }'
+   else
+      cat -
+   fi
+}
+
+_do_underline()
+{
+   awk -v und_char=$UND_CHAR   '
+BEGIN{
+   len = 0
+}
+
+{
+   print
+   l = length( $0 )
+   if ( l > len ) {
+      len = l
+   }
+}
+
+
+END {
+   i = len
+   while ( i-- )
+   {
+      printf( und_char )
+   }
+   printf( "\n" )
+}
+
+'
+}
+
+do_underline()
+{
+   if $DO_UNDERLINE ; then
+      _do_underline
+   else
+      cat -
+   fi
+}
+
+
+_do_code()
+{
+   awk '
+
+BEGIN {
+   last = 0
+}
+
+( FNR == 1 ) {
+   if ( NF > 0 )
+   {
+      printf( "/* %s", $0 )
+   }
+   else
+   {
+      printf( "/*" )
+   }
+
+   next
+}
+
+{
+   if ( NF > 0 )
+   {
+      printf( "\n   %s", $0 )
+      last = 1
+   }
+   else
+   {
+      printf( "\n" )
+      last = 0
+   }
+
+}
+
+END {
+   if ( last )
+   {
+      printf( " */\n" )
+   }
+   else
+   {
+      printf( "*/\n" )
+   }
+
+}
+'
+}
+
+do_code()
+{
+   if $DO_CODE ; then
+      _do_code
+   else
+      cat -
+   fi
+}
+
+do_figlet()
+{
+   DO_HDR='false'
+   DO_SUB='false'
+
+   case ${1:-none} in
+
+      -h)   DO_HDR='true'  ; shift  ;;
+      -s)   DO_SUB='true'
+            DO_SQUASH='true'
+            shift
+      ;;
+
+   esac
+
+   {
+      $DO_HDR && show_hdr_beg
+      $DO_SUB && show_sub_beg
+
+      figlet -w 120 $@
+
+      $DO_SUB && show_sub_end
+      $DO_HDR && show_hdr_end
+
+   } | trim_whitespace | do_squash | do_underline | do_indent | do_code
+}
+
+_do_test()
+{
+   printf "\ntest for: %s\n\n" "$*"
+   echo "test Test TEST" | $REAL_SCRIPT $@ | cat -An
+}
+
+do_test()
+{
+   _do_test hdr
+   _do_test hdr -c
+   _do_test sub
+   _do_test sub -c
+   _do_test
+   _do_test -s
+   _do_test -c
+   _do_test -cs
+   _do_test -u
+   _do_test -us
+   _do_test -usc
+   _do_test -d
+   _do_test -ds
+   _do_test -dsc
+}
+
+
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+#  ____ _____  _    ____ _____   ____  ____   ___   ____ _____ ____ ____ ___ _   _  ____  #
+# / ___|_   _|/ \  |  _ \_   _| |  _ \|  _ \ / _ \ / ___| ____/ ___/ ___|_ _| \ | |/ ___| #
+# \___ \ | | / _ \ | |_) || |   | |_) | |_) | | | | |   |  _| \___ \___ \| ||  \| | |  _  #
+#  ___) || |/ ___ \|  _ < | |   |  __/|  _ <| |_| | |___| |___ ___) |__) | || |\  | |_| | #
+# |____/ |_/_/   \_\_| \_\|_|   |_|   |_| \_\\___/ \____|_____|____/____/___|_| \_|\____| #
+#                                                                                         #
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+
+
+# parse the arguments and test the result
+_OPTIONS=`getopt -o hvcsidu --long help,version,verbose,debug -n "${REAL_BASENAME}" -- "$@"`
+if [ $? != 0 ] ; then bomb 1 "invalid options" ; fi
+# reset the arguments
+eval set -- "${_OPTIONS}"
+
+while true ; do
+   case "$1" in
+
+      -h|--help)        usage ;                       exit 0   ;;
+      --version)        show_version ;                exit 0   ;;
+
+      -v|--verbose)     VERBOSE='true';         shift;         ;;
+      --debug)          DEBUG='true';           shift;         ;;
+
+      -c)               DO_CODE='true';         shift;         ;;
+      -s)               DO_SQUASH='true';       shift;         ;;
+      -i)               DO_INDENT='true';       shift;         ;;
+
+      -d)   DO_UNDERLINE='true'
+            UND_CHAR='='
+            shift
+      ;;
+
+      -u)   DO_UNDERLINE='true'
+            UND_CHAR='-'
+            shift
+      ;;
+
+      --)                                       shift;   break ;;
+      *)                                                 break ;;
+   esac
+done
+
+
+# determine what command to process
+COMMAND="figlet"
+if [ $# -gt 0 ]; then
+   COMMAND="$1"
+   shift
+fi
+
+# process the given command
+case ${COMMAND} in
+
+   ban*)
+      do_figlet -f banner $@
+   ;;
+
+   fig*)
+      do_figlet $@
+   ;;
+
+   hdr)
+      do_figlet -h -f banner $@
+   ;;
+
+   sub)
+      do_figlet -s $@
+   ;;
+
+   test)
+      do_test
+   ;;
+
+   *)
+      cat -
+   ;;
+
+esac
+
+
+# vim: syntax=sh
