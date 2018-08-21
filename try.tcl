@@ -90,12 +90,8 @@ foreach rec $recs {
       set data_fields      [ regexp -all -inline {\S+} $data_str ]
 
       # extract the fields from the list
-      set i                -1
-      set ip               [ lindex $data_fields [ incr i ] ]
-      set fqdn             [ lindex $data_fields [ incr i ] ]
-      if { [ llength $data_fields ] > 2 } {
-         set name          [ lindex $data_fields [ incr i ] ]
-      } else {
+      lassign $data_fields ip fqdn name
+      if { ! [ string length $name ] } {
          set name          [ lindex [ split $fqdn {.} ] 0 ]
       }
 
@@ -242,11 +238,13 @@ proc lookup_dns_name { ip } {
          puts "DEBUG: lookup failed"
       }
 
+      dict set dns_entry   found no
       dict set dns_entry   name  "---"
       dict set dns_entry   names [ list "---" ]
 
    } else {
 
+      dict set dns_entry   found yes
       dict set dns_entry   name  [ lindex $names 0 ]
       dict set dns_entry   names $names
 
