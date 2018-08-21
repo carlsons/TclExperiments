@@ -58,6 +58,59 @@ proc pdict { d {i 0} {p "  "} {s " -> "} } {
                     #######
 ####################################################################################################
 
+proc get_ipv { ip } {
+   if { [ string first "." $ip ] > -1 } {
+      return 4
+   }
+   if { [ string first ":" $ip ] > -1 } {
+      return 6
+   }
+
+   return -code error "ip not recognizable: '$ip'"
+}
+
+proc compare_ips { lval rval } {
+
+   # determine if each is an IPv4 or IPv6 addr
+   set lver    [ get_ipv $lval ]
+   set rver    [ get_ipv $rval ]
+
+   # handle different versions; IPv4 is always less than an IPv6
+   if { $lver != $rver } {
+      if { $lver == 4 } {
+         return -1
+      }
+      return 1
+   }
+
+   # handle IPv4 addresses; do a more sensible numeric comparison
+   if { $lver == 4 } {
+      set llst    [ split $lval "." ]
+      set rlst    [ split $rval "." ]
+      foreach lv $llst rv $rlst {
+         if { $lv < $rv } {
+            puts [ format "DEBUG: %-16s %2s %-16s" $lval < $rval ]
+            return -1
+         }
+         if { $lv > $rv } {
+            puts [ format "DEBUG: %-16s %2s %-16s" $lval > $rval ]
+            return 1
+         }
+      }
+      puts [ format "DEBUG: %-16s %2s %-16s" $lval == $rval ]
+      return 0
+   }
+
+   # handle IPv6 addresses
+   if { $lver == 6 } {
+      # TODO: support IPv6 addresses better
+      return string compare $lval $rval
+   }
+
+   return -code error "coding error"
+}
+
+
 # this is a helper procedure that gets a list of ip addresses by parsing the
 # output of netstat
 
@@ -67,7 +120,7 @@ proc get_addrs {} {
    set raw                 [ read $fd ]
    set recs                [ split $raw "\n" ]
 
-   set rc                  [ list ]
+   set rc                  [ dict create ]
 
    foreach rec [ lrange $recs 2 end ] {
 
@@ -80,7 +133,7 @@ proc get_addrs {} {
          set sep              [ string last ":" $ip_port                      ]
          set ip               [ string range    $ip_port 0 [ expr $sep - 1 ]  ]
 
-         lappend rc           $ip
+         dict incr rc         $ip
 
          if { $::debug } {
             puts "----------------------------------------"
@@ -93,7 +146,8 @@ proc get_addrs {} {
       }
    }
 
-   return $rc
+   # return [ lsort -command compare_ips [ dict keys $rc ] ]
+   return [ dict keys $rc ]
 }
 
 
@@ -202,12 +256,12 @@ proc lookup_dns_name { ip } {
          if { [ string first "domain name pointer" $rec ] > -1 } {
 
             set data_fields      [ regexp -all -inline {\S+} $rec ]
-            set name             [ string trimright [ lindex $data_fields end ] "." ]
-            lappend names $name
+            set fqdn             [ string trimright [ lindex $data_fields end ] "." ]
+            lappend names $fqdn
 
             if { $::debug } {
                puts "DEBUG: rec=$rec"
-               puts "DEBUG: name=$name"
+               puts "DEBUG: fqdn=$fqdn"
                puts ""
             }
 
@@ -236,7 +290,7 @@ proc lookup_dns_name { ip } {
    if { $err } {
 
       dict set dns_entry   found no
-      dict set dns_entry   name  "---"
+      dict set dns_entry   fqdn  "---"
       dict set dns_entry   names [ list "---" ]
 
       if { $::debug } {
@@ -251,13 +305,50 @@ proc lookup_dns_name { ip } {
    } else {
 
       dict set dns_entry   found yes
-      dict set dns_entry   name  [ lindex $names 0 ]
+      dict set dns_entry   fqdn  [ lindex $names 0 ]
       dict set dns_entry   names $names
 
    }
 
    dict set dns_cache      $ip $dns_entry
 
+}
+
+
+
+####################################################################################################
+
+
+#       ####   ####  #    # #    # #####          #    #   ##   #    # ######
+#      #    # #    # #   #  #    # #    #         ##   #  #  #  ##  ## #
+#      #    # #    # ####   #    # #    #         # #  # #    # # ## # #####
+#      #    # #    # #  #   #    # #####          #  # # ###### #    # #
+#      #    # #    # #   #  #    # #              #   ## #    # #    # #
+######  ####   ####  #    #  ####  #              #    # #    # #    # ######
+                                          #######
+####################################################################################################
+
+
+proc lookup_name { ip } {
+
+   global hosts
+   global dns_cache
+
+   if {        [ dict exists  $hosts      $ip      ] } {
+      return   [ dict get     $hosts      $ip fqdn ]
+   }
+
+   if {        [ dict exists  $dns_cache  $ip      ] } {
+      return   [ dict get     $dns_cache  $ip fqdn ]
+   }
+
+   lookup_dns_name $ip
+
+   if {      ! [ dict exists  $dns_cache  $ip      ] } {
+      return -code error "lookup_dns_name failed?"
+   }
+
+   return      [ dict get     $dns_cache  $ip fqdn ]
 }
 
 
@@ -288,36 +379,29 @@ puts "\n\nlookup=[ dict get $hosts 127.0.0.1 fqdn ]"
 puts "\n-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-"
 puts "\nGETTING SAMPLE DATA\n"
 
-set raw                    [ get_addrs ]
-set inputs                 [ split $raw ]
+set inputs                 [ get_addrs ]
 
-# puts "----------------------------------------"
-# puts "DEBUG: dump inputs"
+lappend inputs 172.217.1.132
+lappend inputs 192.168.1.104
+lappend inputs 127.0.0.1
 
-# puts "DEBUG: raw=$raw"
-
-foreach x $inputs {
-   puts $x
-}
-
+set inputs                 [ lsort -command compare_ips $inputs ]
 
 
 puts "\n-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-"
 puts "\nDEBUG: DOING LOOKUP\n"
 
-lappend inputs 172.217.1.132
-lappend inputs 192.168.1.104
-
-foreach arg $inputs {
-   lookup_dns_name $arg
+foreach ip $inputs {
+   set fqdn                [ lookup_name $ip ]
+   puts "$ip -> $fqdn"
 }
 
-# puts "\n----------------------------------------"
-# puts "\nDEBUG: dumping dns_cache\n"
+
+
+puts "\n-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-"
+puts "\nDEBUG: dumping dns_cache\n"
 
 pdict $dns_cache
-
-puts "\n----------------------------------------"
 
 
 
