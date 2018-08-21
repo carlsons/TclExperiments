@@ -1,10 +1,7 @@
 #! /usr/bin/tclsh
 
-
-
+set debug   no
 set verbose no
-
-
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
@@ -49,91 +46,20 @@ proc pdict { d {i 0} {p "  "} {s " -> "} } {
 
 
 
-      #                           #
-     #  ###### #####  ####       #  #    #  ####   ####  #####  ####
-    #   #        #   #    #     #   #    # #    # #        #   #
-   #    #####    #   #         #    ###### #    #  ####    #    ####
-  #     #        #   #        #     #    # #    #      #   #        #
- #      #        #   #    #  #      #    # #    # #    #   #   #    #
-#       ######   #    ####  #       #    #  ####   ####    #    ####
+####################################################################################################
 
 
+ ####  ###### #####           ##   #####  #####  #####   ####
+#    # #        #            #  #  #    # #    # #    # #
+#      #####    #           #    # #    # #    # #    #  ####
+#  ### #        #           ###### #    # #    # #####       #
+#    # #        #           #    # #    # #    # #   #  #    #
+ ####  ######   #           #    # #####  #####  #    #  ####
+                    #######
+####################################################################################################
 
-puts "\n-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-"
-puts "\n PARSING /etc/hosts\n"
-
-set hosts                  [ dict create ]
-
-set fd                     [ open "/etc/hosts" r ]
-set raw                    [ read $fd ]
-set recs                   [ split $raw "\n" ]
-
-foreach rec $recs {
-
-   # puts $rec
-
-   # find the comment marker in the record
-   set c                   [ string first {#} $rec ]
-   # strip the comment and trailing space from the record
-   if { $c > -1 } {
-      set data_str         [ string trimright [ string range $rec 0 [ expr $c - 1] ] ]
-      set comment          [ string range $rec $c end ]
-   } else {
-      set data_str         $rec
-      set comment          {}
-   }
-
-   # and process this record, if there's anything left
-   if { [ string length $data_str ] } {
-
-      # split the fields into a list of 2 or 3 elements: ip, fqdn and name
-      set data_fields      [ regexp -all -inline {\S+} $data_str ]
-
-      # extract the fields from the list
-      lassign $data_fields ip fqdn name
-      if { ! [ string length $name ] } {
-         set name          [ lindex [ split $fqdn {.} ] 0 ]
-      }
-
-      # puts "'$data_str' '$data_fields'"
-      # puts "ip=$ip fqdn=$fqdn name=$name"
-
-      set d                [ dict create ]
-
-      dict set d           record            $rec
-      dict set d           data_str          $data_str
-      dict set d           data_fields       $data_fields
-      dict set d           comment           $comment
-      dict set d           ip                $ip
-      dict set d           fqdn              $fqdn
-      dict set d           name              $name
-
-      dict set hosts       $ip               $d
-
-   }
-
-}
-
-close $fd
-
-pdict $hosts
-puts "\n\nlookup=[ dict get $hosts 127.0.0.1 fqdn ]"
-
-
-
-#       ####### ####### #    # #     # ######
-#       #     # #     # #   #  #     # #     #
-#       #     # #     # #  #   #     # #     #
-#       #     # #     # ###    #     # ######
-#       #     # #     # #  #   #     # #
-#       #     # #     # #   #  #     # #
-####### ####### ####### #    #  #####  #
-
-
-
-puts "\n-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-"
-puts "\nGETTING SAMPLE DATA\n"
-
+# this is a helper procedure that gets a list of ip addresses by parsing the
+# output of netstat
 
 proc get_addrs {} {
 
@@ -147,40 +73,111 @@ proc get_addrs {} {
 
       if { [ string length $rec ] } {
 
+         # field 4 is the ip address and port of the remote socket
          set ip_port          [ lindex [ regexp -all -inline {\S+} $rec ] 4   ]
 
+         # find the last separator; handles both IPv4 and IPv6 addresses
          set sep              [ string last ":" $ip_port                      ]
          set ip               [ string range    $ip_port 0 [ expr $sep - 1 ]  ]
 
-         puts "----------------------------------------"
-         puts "DEBUG: rec=$rec"
-         puts "DEBUG: ip_port=$ip_port"
-         puts "DEBUG: sep=$sep"
-         puts "DEBUG: ip=$ip"
-
          lappend rc           $ip
+
+         if { $::debug } {
+            puts "----------------------------------------"
+            puts "DEBUG: rec=$rec"
+            puts "DEBUG: ip_port=$ip_port"
+            puts "DEBUG: sep=$sep"
+            puts "DEBUG: ip=$ip"
+         }
+
       }
    }
 
    return $rc
 }
 
-set raw                    [ get_addrs ]
-puts "DEBUG: raw=$raw"
 
-set inputs                 [ split $raw ]
 
-puts "----------------------------------------"
-puts "DEBUG: dump inputs"
+####################################################################################################
 
-foreach x $inputs {
-   puts $x
+
+#####  ######   ##   #####          #    #  ####   ####  #####  ####
+#    # #       #  #  #    #         #    # #    # #        #   #
+#    # #####  #    # #    #         ###### #    #  ####    #    ####
+#####  #      ###### #    #         #    # #    #      #   #        #
+#   #  #      #    # #    #         #    # #    # #    #   #   #    #
+#    # ###### #    # #####          #    #  ####   ####    #    ####
+                            #######
+####################################################################################################
+
+
+set hosts                     [ dict create ]
+
+proc read_hosts {} {
+
+   global hosts
+
+   set fd                     [ open "/etc/hosts" r ]
+   set raw                    [ read $fd ]
+   set recs                   [ split $raw "\n" ]
+
+   foreach rec $recs {
+
+      # find the comment marker in the record
+      set c                   [ string first {#} $rec ]
+      # strip the comment and trailing space from the record
+      if { $c > -1 } {
+         set data_str         [ string trimright [ string range $rec 0 [ expr $c - 1] ] ]
+         set comment          [ string range $rec $c end ]
+      } else {
+         set data_str         $rec
+         set comment          {}
+      }
+
+      # and process this record, if there's anything left
+      if { [ string length $data_str ] } {
+
+         # split the fields into a list of 2 or 3 elements: ip, fqdn and name
+         set data_fields      [ regexp -all -inline {\S+} $data_str ]
+
+         # extract the fields from the list
+         lassign $data_fields ip fqdn name
+         if { ! [ string length $name ] } {
+            set name          [ lindex [ split $fqdn {.} ] 0 ]
+         }
+
+         set d                [ dict create ]
+
+         dict set d           record            $rec
+         dict set d           data_str          $data_str
+         dict set d           data_fields       $data_fields
+         dict set d           comment           $comment
+         dict set d           ip                $ip
+         dict set d           fqdn              $fqdn
+         dict set d           name              $name
+
+         dict set hosts       $ip               $d
+      }
+   }
+
+   close $fd
+
+   return $hosts
 }
 
 
 
-puts "\n-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-"
-puts "\nDEBUG: DOING LOOKUP"
+####################################################################################################
+
+
+#       ####   ####  #    # #    # #####          #####  #    #  ####          #    #   ##   #    # ######
+#      #    # #    # #   #  #    # #    #         #    # ##   # #              ##   #  #  #  ##  ## #
+#      #    # #    # ####   #    # #    #         #    # # #  #  ####          # #  # #    # # ## # #####
+#      #    # #    # #  #   #    # #####          #    # #  # #      #         #  # # ###### #    # #
+#      #    # #    # #   #  #    # #              #    # #   ## #    #         #   ## #    # #    # #
+######  ####   ####  #    #  ####  #              #####  #    #  ####          #    # #    # #    # ######
+                                          #######                      #######
+####################################################################################################
 
 
 set dns_cache [ dict create ]
@@ -189,8 +186,10 @@ proc lookup_dns_name { ip } {
 
    global dns_cache
 
-   puts "\n----------------------------------------"
-   puts "DEBUG: looking up: $ip\n"
+   if { $::debug } {
+      puts "\n----------------------------------------"
+      puts "DEBUG: looking up: $ip\n"
+   }
 
    set fd                  [ open "|host $ip" r ]
    set raw                 [ read $fd ]
@@ -204,22 +203,27 @@ proc lookup_dns_name { ip } {
 
             set data_fields      [ regexp -all -inline {\S+} $rec ]
             set name             [ string trimright [ lindex $data_fields end ] "." ]
-
-            puts "DEBUG: rec=$rec"
-            puts "DEBUG: name=$name"
-            puts ""
-
             lappend names $name
 
+            if { $::debug } {
+               puts "DEBUG: rec=$rec"
+               puts "DEBUG: name=$name"
+               puts ""
+            }
+
          } else {
-            # puts "DEBUG: not found"
+            if { $::debug } {
+               puts "DEBUG: not found"
+            }
          }
       } else {
-         # puts "DEBUG: empty"
+         if { $::debug } {
+            puts "DEBUG: empty"
+         }
       }
    }
 
-   if { [ llength $names ] } {
+   if { $::debug && [ llength $names ] } {
       puts "DEBUG: names=$names"
    }
 
@@ -231,16 +235,18 @@ proc lookup_dns_name { ip } {
 
    if { $err } {
 
-      if { $::verbose } {
-         puts "DEBUG: err=$err errmsg=$errmsg"
-         pdict $opts
-      } else {
-         puts "DEBUG: lookup failed"
-      }
-
       dict set dns_entry   found no
       dict set dns_entry   name  "---"
       dict set dns_entry   names [ list "---" ]
+
+      if { $::debug } {
+         if { $::verbose } {
+            puts "DEBUG: err=$err errmsg=$errmsg"
+            pdict $opts
+         } else {
+            puts "DEBUG: lookup failed"
+         }
+      }
 
    } else {
 
@@ -255,6 +261,50 @@ proc lookup_dns_name { ip } {
 }
 
 
+
+####################################################################################################
+
+####### #######  #####  #######     #####  ####### ######  #######
+   #    #       #     #    #       #     # #     # #     # #
+   #    #       #          #       #       #     # #     # #
+   #    #####    #####     #       #       #     # #     # #####
+   #    #             #    #       #       #     # #     # #
+   #    #       #     #    #       #     # #     # #     # #
+   #    #######  #####     #        #####  ####### ######  #######
+
+####################################################################################################
+
+
+puts "\n-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-"
+puts "\n PARSING /etc/hosts\n"
+
+read_hosts
+
+pdict $hosts
+puts "\n\nlookup=[ dict get $hosts 127.0.0.1 fqdn ]"
+
+
+
+puts "\n-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-"
+puts "\nGETTING SAMPLE DATA\n"
+
+set raw                    [ get_addrs ]
+set inputs                 [ split $raw ]
+
+# puts "----------------------------------------"
+# puts "DEBUG: dump inputs"
+
+# puts "DEBUG: raw=$raw"
+
+foreach x $inputs {
+   puts $x
+}
+
+
+
+puts "\n-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-"
+puts "\nDEBUG: DOING LOOKUP\n"
+
 lappend inputs 172.217.1.132
 lappend inputs 192.168.1.104
 
@@ -262,8 +312,8 @@ foreach arg $inputs {
    lookup_dns_name $arg
 }
 
-puts "\n----------------------------------------"
-puts "\nDEBUG: dumping dns_cache"
+# puts "\n----------------------------------------"
+# puts "\nDEBUG: dumping dns_cache\n"
 
 pdict $dns_cache
 
@@ -271,5 +321,4 @@ puts "\n----------------------------------------"
 
 
 
-
-# vim: syntax=tcl
+# vim: syntax=tcl si
