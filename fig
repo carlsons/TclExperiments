@@ -370,6 +370,10 @@ case ${COMMAND} in
       do_figlet -s $@
    ;;
 
+   date)
+      date '+%Y/%m-%b/%d-%a/%H:%M:%S-%Z%z'
+   ;;
+
    test)
       do_test
    ;;
