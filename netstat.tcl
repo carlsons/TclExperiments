@@ -14,8 +14,8 @@ set debug_perf          yes
 dict set state_names CLOSED            CLD
 dict set state_names CLOSE_WAIT        CLW
 dict set state_names ESTABLISHED       EST
-dict set state_names FIN_WAIT_1        FW1
-dict set state_names FIN_WAIT_2        FW2
+dict set state_names FIN_WAIT1         FW1
+dict set state_names FIN_WAIT2         FW2
 dict set state_names LAST_ACK          LAK
 dict set state_names LISTEN            LIS
 dict set state_names SYN_RECEIVED      SYR
@@ -436,8 +436,8 @@ set netstat_undef          [ dict create ]
 #    CLOSED
 #    CLOSE_WAIT
 #    ESTABLISHED
-#    FIN_WAIT_1
-#    FIN_WAIT_2
+#    FIN_WAIT1
+#    FIN_WAIT2
 #    LAST_ACK
 #    LISTEN
 #    SYN_RECEIVED
@@ -459,8 +459,8 @@ foreach d $netstat_data {
       SYN_RECEIVED         { lappend netstat_syn      $d }
 
       CLOSE_WAIT           -
-      FIN_WAIT_1           -
-      FIN_WAIT_2           -
+      FIN_WAIT1            -
+      FIN_WAIT2            -
       LAST_ACK             -
       TIME_WAIT            {
          if { $timer_val != 0 } {
