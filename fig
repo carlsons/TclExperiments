@@ -1,7 +1,7 @@
 #! /usr/bin/zsh
 TEMPLATE_VERSION="1.1-2016.05.24-01"
 
-SCRIPT_VERSION="1.1-2018.08.15-01"
+SCRIPT_VERSION="1.2-2018.10.12-01"
 SCRIPT_NAME="fig"
 SCRIPT_DESC="figlet formatter"
 
@@ -65,6 +65,7 @@ DO_CODE='false'
 DO_SQUASH='false'
 DO_INDENT='false'
 DO_UNDERLINE='false'
+DO_TAG='false'
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
@@ -190,10 +191,17 @@ do_underline()
 
 _do_code()
 {
+
+   # NOTE: in order to cuddle the comment end sequence properly, each line is
+   # left unterminated, i.e.: the new line is printed at the beginning of each
+   # line; the last variable indicates whether the last line printed had any
+   # data, which allows the END clause to add a space before the end comment
+
    awk '
 
 BEGIN {
    last = 0
+   tags = 0
 }
 
 ( FNR == 1 ) {
@@ -223,7 +231,19 @@ BEGIN {
 
 }
 
+/TAGS: / {
+   tags = 1
+}
+
 END {
+   # if tags is set, then a tag line was included, so we don NOT cuddle the
+   # end comment and we reset last to omit the leading space
+   if ( tags )
+   {
+      printf( "\n" )
+      last = 0
+   }
+   # if last is set, then the last line printed not blank
    if ( last )
    {
       printf( " */\n" )
@@ -262,13 +282,17 @@ do_figlet()
    esac
 
    {
+      # get the text
+      TEXT=$( cat - )
+
       $DO_HDR && show_hdr_beg
       $DO_SUB && show_sub_beg
 
-      figlet -w 120 $@
+      echo $TEXT | figlet -w 120 $@
 
       $DO_SUB && show_sub_end
       $DO_HDR && show_hdr_end
+      $DO_TAG && printf "TAGS: %s\n" "$TEXT"
 
    } | trim_whitespace | do_squash | do_underline | do_indent | do_code
 }
@@ -279,10 +303,23 @@ _do_test()
    echo "test Test TEST" | $REAL_SCRIPT $@ | cat -An
 }
 
+do_comment()
+{
+   cat <<EOF
+/*
+
+
+
+*/
+EOF
+}
+
 do_test()
 {
    _do_test hdr
+   _do_test hdr -t
    _do_test hdr -c
+   _do_test hdr -ct
    _do_test sub
    _do_test sub -c
    _do_test
@@ -310,7 +347,7 @@ do_test()
 
 
 # parse the arguments and test the result
-_OPTIONS=`getopt -o hvcsidu --long help,version,verbose,debug -n "${REAL_BASENAME}" -- "$@"`
+_OPTIONS=`getopt -o hvcsitdu --long help,version,verbose,debug -n "${REAL_BASENAME}" -- "$@"`
 if [ $? != 0 ] ; then bomb 1 "invalid options" ; fi
 # reset the arguments
 eval set -- "${_OPTIONS}"
@@ -327,6 +364,7 @@ while true ; do
       -c)               DO_CODE='true';         shift;         ;;
       -s)               DO_SQUASH='true';       shift;         ;;
       -i)               DO_INDENT='true';       shift;         ;;
+      -t)               DO_TAG='true';          shift;         ;;
 
       -d)   DO_UNDERLINE='true'
             UND_CHAR='='
@@ -372,6 +410,10 @@ case ${COMMAND} in
 
    date)
       date '+%Y/%m-%b/%d-%a/%H:%M:%S-%Z%z'
+   ;;
+
+   com*)
+      do_comment
    ;;
 
    test)
